@@ -119,6 +119,18 @@ function App() {
 
   const generateRoute = async (event, navigate) => {
     event.preventDefault()
+    const trimmedLocation = form.location.trim()
+
+    if (!trimmedLocation) {
+      setRequestError('Please enter a starting location before planning your walk.')
+      return
+    }
+
+    if (trimmedLocation.length < 2) {
+      setRequestError('Please enter a more specific starting point so we can find a nearby walk.')
+      return
+    }
+
     setRequestError('')
     navigate('/finding')
 
@@ -127,7 +139,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location: form.location.trim(),
+          location: trimmedLocation,
           originCoordinates: form.coordinates,
           duration: form.duration,
           scenery: form.scenery.map((item) => sceneryKeys[item]),
@@ -136,16 +148,16 @@ function App() {
       })
       const data = await response.json()
       if (!response.ok || data.error) {
-        throw new Error(data.error || 'The route planner could not find a walk.')
+        throw new Error(data.error || 'We could not find a suitable walk for that starting point. Please try another location.')
       }
       if (data.fallback) {
-        throw new Error(data.message || 'No suitable loop was found for that location.')
+        throw new Error(data.message || 'We could not find a walking loop that matched your timing and starting point. Try another area or use your current location.')
       }
       setRouteResult(data)
       setPrompts(Array.isArray(data.summary?.prompts) ? data.summary.prompts : [])
       navigate('/route')
     } catch (error) {
-      setRequestError(error.message || 'We could not find a route. Please try again.')
+      setRequestError(error.message || 'We could not find a route for that location. Please try again.')
       navigate('/')
     }
   }
@@ -336,10 +348,10 @@ function RoutePage({ result, prompts }) {
   const center = geometry[0] || [route.start.lat, route.start.lon]
   const navigate = useNavigate()
   const sceneryStatusMessage = route.scenicEvidenceStatus === 'unavailable'
-    ? 'OpenStreetMap scenery data could not be checked for this route.'
+    ? 'We could not check the nearby map data for parks, gardens, greenery, or water on this route.'
     : route.scenicEvidenceStatus === 'no_features'
-      ? 'The scenery lookup completed, but no mapped features from the supported categories were returned nearby.'
-      : 'No mapped features from the supported categories were found near this route.'
+      ? 'We looked for parks, gardens, greenery, and water near this route, but nothing matching those categories was mapped close by.'
+      : 'We checked the nearby map data and did not find parks, gardens, greenery, or water close to this route.'
 
   return (
     <main className="page route-page" id="route-details">
@@ -349,7 +361,7 @@ function RoutePage({ result, prompts }) {
           <h1>{route.name}</h1>
           <p className="route-subtitle">
             Calculated by {route.routingEngine || 'Valhalla'} using pedestrian routing.
-            {scenicEvidence.length ? ' Nearby OpenStreetMap scenery evidence is listed below.' : ' No specific scenery is confirmed.'}
+            {scenicEvidence.length ? ' We found nearby map features that match the route area.' : ' We did not find any nearby parks, gardens, greenery, or water features in the map data we checked.'}
           </p>
         </div>
         <button className="text-button" type="button" onClick={() => navigate('/')}>Edit preferences</button>
@@ -396,8 +408,7 @@ function RoutePage({ result, prompts }) {
       <section className="route-card evidence-card">
         <h2>Nearby scenery evidence</h2>
         <p className="evidence-disclaimer">
-          These OpenStreetMap features are nearby, not proof that the route passes through them.
-          Distances are measured from each mapped point or area center to the route.
+          These are nearby map features, not proof that the route passes through them. We list them as nearby points only, and the distance is measured from the route to each mapped feature.
         </p>
         {scenicEvidence.length > 0
           ? (

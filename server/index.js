@@ -441,6 +441,38 @@ async function fetchScenicEvidence(routes) {
   }
 }
 
+function parseOllamaJsonResponse(content) {
+  const trimmed = String(content || '').trim()
+  if (!trimmed) {
+    throw new Error('Gemma returned empty output.')
+  }
+
+  const candidates = [trimmed]
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  if (fenced && fenced[1]) {
+    candidates.push(fenced[1].trim())
+  }
+
+  let lastError
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate)
+    } catch (error) {
+      lastError = error
+      const objectMatch = candidate.match(/\{[\s\S]*\}/)
+      if (objectMatch) {
+        try {
+          return JSON.parse(objectMatch[0])
+        } catch (innerError) {
+          lastError = innerError
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('Gemma returned invalid JSON.')
+}
+
 async function generateAiSummary({ route, locationLabel, preferences, mood, targetDurationMinutes, scenicEvidence }) {
   const model = process.env.OLLAMA_MODEL || 'gemma2:2b'
   const basePrompt = `
@@ -480,7 +512,7 @@ Return valid JSON in this shape: {"explanation":"...","prompts":["...","...","..
 
     const payload = await response.json()
     const content = payload.response || ''
-    const parsed = JSON.parse(content.trim())
+    const parsed = parseOllamaJsonResponse(content)
     const explanation = typeof parsed.explanation === 'string' ? parsed.explanation.trim() : ''
     const prompts = Array.isArray(parsed.prompts)
       ? parsed.prompts.filter((prompt) => typeof prompt === 'string' && prompt.trim()).map((prompt) => prompt.trim())
@@ -489,7 +521,7 @@ Return valid JSON in this shape: {"explanation":"...","prompts":["...","...","..
     if (!explanation || prompts.length !== 3) {
       throw new Error('Gemma returned an incomplete explanation or walking prompt list.')
     }
-    if (/\b(?:passes?|passing|runs?|walks?)\s+(?:directly\s+)?(?:through|alongside|beside)\b|\b(?:on|along|alongside)\s+the\s+route\b|\b(?:route|path)\s+(?:visits?|includes?|goes?\s+through|enters?)\b/i.test(explanation)) {
+    if (/\b(?:passes?\s+(?:directly\s+)?(?:through|across|alongside|beside)|\b(?:on|along|alongside)\s+the\s+route\b|\b(?:route|path)\s+(?:visits?|includes?|goes?\s+through|enters?)\b)/i.test(explanation)) {
       throw new Error('Gemma described nearby scenery as being on the route.')
     }
 
@@ -503,8 +535,8 @@ Return valid JSON in this shape: {"explanation":"...","prompts":["...","...","..
     console.warn(`Ollama summary generation failed; using labelled fallback prompts: ${error.message}`)
     return {
       explanation: scenicEvidence.length
-        ? `This is a pedestrian route returned by Valhalla with a measured duration of ${Math.round(route.durationSeconds / 60)} minutes. OpenStreetMap lists ${scenicEvidence.length} mapped feature${scenicEvidence.length === 1 ? '' : 's'} near the route; nearby features are not confirmed to lie along the path.`
-        : `This is a pedestrian route returned by Valhalla with a measured duration of ${Math.round(route.durationSeconds / 60)} minutes. No specific scenic features were verified near the route.`,
+        ? `This is a pedestrian route returned by Valhalla with a measured duration of ${Math.round(route.durationSeconds / 60)} minutes. We found ${scenicEvidence.length} nearby map feature${scenicEvidence.length === 1 ? '' : 's'} in the route area, but these are nearby points rather than proof that the route passes through them.`
+        : `This is a pedestrian route returned by Valhalla with a measured duration of ${Math.round(route.durationSeconds / 60)} minutes. We checked for parks, gardens, greenery, and water close to the route, but nothing matching those categories was found in the map data available.`,
       prompts: [
         'What sounds or textures stand out most on this stretch?',
         'Which part of the route feels most calming or energising?',
@@ -539,9 +571,18 @@ app.post('/api/plan-route', async (req, res) => {
       Number.isFinite(Number(originCoordinates.lon)) &&
       Math.abs(Number(originCoordinates.lat)) <= 90 &&
       Math.abs(Number(originCoordinates.lon)) <= 180
-    const origin = hasOriginCoordinates
-      ? { lat: Number(originCoordinates.lat), lon: Number(originCoordinates.lon), displayName: location }
-      : await geocodePlace(location)
+
+    let origin
+    try {
+      origin = hasOriginCoordinates
+        ? { lat: Number(originCoordinates.lat), lon: Number(originCoordinates.lon), displayName: location }
+        : await geocodePlace(location)
+    } catch {
+      return res.status(400).json({
+        error: 'We could not find that starting location. Please try a more specific place name or use your current location.',
+      })
+    }
+
     const loopCandidates = buildLoopCandidates(origin, requestedDuration)
     const ranked = []
 
