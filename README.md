@@ -64,15 +64,24 @@ Before using the AI explanation flow, install Ollama and pull the model:
 
 The default model used by the app is `gemma2:2b`.
 
+The default Valhalla URL is the FOSSGIS-hosted public demo, linked by the [Valhalla API documentation](https://valhalla.github.io/valhalla/api/route/api-reference/). Its API provides pedestrian costing, but a fair-use quota or production SLA was not found in the published API documentation. Use this endpoint only for low-volume development; use a self-hosted Valhalla instance or another provider with explicit service terms before deploying for public or sustained use. The app submits up to four pedestrian route requests for each route-planning request.
+
+The default `OVERPASS_URL` queries OpenStreetMap features near route geometries. It is a bounded, best-effort development lookup and can be unavailable or rate-limited; on failure, the app reports that scenery could not be checked and ranks routes by duration alone. Do not build a production service around the public Overpass instance without reviewing its [usage guidance](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) and choosing an appropriate hosted or self-managed data service. Scenic features are sourced from OpenStreetMap and linked to their OSM records. Feature proximity is evidence of nearby mapped scenery, not proof that a pedestrian path enters the feature.
+
+If Ollama is installed locally and the model is available, the app uses it for route explanations and walking prompts. If not, it returns clearly labelled fallback content.
+
 ## Data and attribution
 
 - Map tiles: OpenStreetMap
+<<<<<<< HEAD
 - Route engine: Valhalla, using its pedestrian routing profile
 - Local model runner: Ollama
 - Model: Gemma 2 (local, open-weight model)
 - Map and feature data: OpenStreetMap contributors
 
 OpenStreetMap tiles and data require attribution and are subject to their own licence and usage conditions. This project is not claiming that all components are MIT-licensed simply because the repository includes an MIT License file. Third-party services, datasets, and model licences should be reviewed separately.
+
+Spoken walking prompts use the browser's built-in speech synthesis. Test audio before starting, since speech availability and background playback depend on the browser and device; keep your attention on your surroundings rather than the screen.
 
 ## License
 
